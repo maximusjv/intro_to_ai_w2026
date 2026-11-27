@@ -178,7 +178,7 @@ class SpiderManProblem(search.Problem):
         parent constructor, and store any static information (map, villain
         paths, caches, ...) on self."""
         spiderman = initial["spiderman"]
-        self.static_state = StaticState(
+        global_state = StaticState(
             max_web_fluid=spiderman["max_web_fluid"],
             swing_range=spiderman["swing_range"],
             heights=initial["heights"],
@@ -188,7 +188,7 @@ class SpiderManProblem(search.Problem):
             villains=initial["villains"],
         )
         initial_state = State(
-            global_state=self.static_state,
+            global_state=global_state,
             turn=0,
             location=tuple(spiderman["starting_location"]),
             web_fluid=spiderman["starting_web_fluid"],
@@ -203,11 +203,64 @@ class SpiderManProblem(search.Problem):
 
     def result(self, state, action):
         """Return the state that results from executing the given action in the given state."""
-        raise NotImplementedError
+        gs = state.global_state
+        op = action[0]
+
+        if op == "finish":
+            return State(
+                global_state=gs,
+                turn=state.turn + 1,
+                location=state.location,
+                web_fluid=state.web_fluid,
+                web_cache_active_cooldowns=state.web_cache_active_cooldowns,
+                finished=True,
+            )
+
+        active_cds = state.web_cache_active_cooldowns
+        next_cds = [(loc, rem - 1) for loc, rem in active_cds if rem > 1]
+
+        if op == "swing":
+            dest_r, dest_c = action[1]
+            src_r, src_c = state.location
+            next_loc = (dest_r, dest_c)
+            cost = abs(dest_r - src_r) + abs(dest_c - src_c)
+            climb = gs.heights[dest_r][dest_c] - gs.heights[src_r][src_c]
+            if climb > 0:
+                cost += climb
+            fluid = state.web_fluid - cost
+        elif op == "wait":
+            next_loc = state.location
+            fluid = state.web_fluid
+        elif op == "refill":
+            next_loc = state.location
+            cache = gs.web_caches[next_loc]
+            fluid = min(state.web_fluid + cache["refill_amount"], gs.max_web_fluid)
+            cd = cache["cooldown"]
+            if cd > 0:
+                next_cds.append((next_loc, cd))
+                next_cds.sort()
+        else:
+            raise ValueError(f"Unknown action: {action!r}")
+
+        next_turn = state.turn + 1
+
+        if gs.villains_paths:
+            villain_count = gs.villains_at(next_turn).get(next_loc, 0)
+            if villain_count:
+                fluid -= villain_count * gs.villain_damage
+
+        return State(
+            global_state=gs,
+            turn=next_turn,
+            location=next_loc,
+            web_fluid=fluid,
+            web_cache_active_cooldowns=tuple(next_cds),
+            finished=False,
+        )
 
     def goal_test(self, state):
         """Return True if the state is a goal state."""
-        raise NotImplementedError
+        return state.finished
 
     def h(self, node):
         """
