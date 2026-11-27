@@ -132,7 +132,7 @@ class State:
         turn: int,
         location: tuple[int, int],
         web_fluid,
-        web_cache_active_cooldowns: tuple[tuple[tuple, int]],
+        web_cache_active_cooldowns: tuple[tuple[tuple, int]] | tuple,
         # cooldown left ((location, turns left, I use tuple for hashing and assume not many active,
         # but might be a bottleneck
         finished: bool,  # to make sure that ("finish",) was an action
@@ -177,7 +177,25 @@ class SpiderManProblem(search.Problem):
         Convert it to YOUR hashable state representation before calling the
         parent constructor, and store any static information (map, villain
         paths, caches, ...) on self."""
-        search.Problem.__init__(self, initial)
+        spiderman = initial["spiderman"]
+        self.static_state = StaticState(
+            max_web_fluid=spiderman["max_web_fluid"],
+            swing_range=spiderman["swing_range"],
+            heights=initial["heights"],
+            city=initial["map"],
+            web_caches=initial["web_caches"],
+            villain_damage=spiderman["villain_damage"],
+            villains=initial["villains"],
+        )
+        initial_state = State(
+            global_state=self.static_state,
+            turn=0,
+            location=tuple(spiderman["starting_location"]),
+            web_fluid=spiderman["starting_web_fluid"],
+            web_cache_active_cooldowns=(),
+            finished=False,
+        )
+        search.Problem.__init__(self, initial_state)
 
     def actions(self, state):
         """Return the valid actions that can be executed in the given state."""
